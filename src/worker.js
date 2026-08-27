@@ -1,10 +1,10 @@
 const CAMBRIDGE_BASE = "https://dictionary.cambridge.org";
 const LONGMAN_BASE = "https://www.ldoceonline.com";
 const ETYMONLINE_BASE = "https://www.etymonline.com";
-const CACHE_SCHEMA_VERSION = 11;
+const CACHE_SCHEMA_VERSION = 12;
 
 const UPSTREAM_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (compatible; VocabularyExplorer/2.2; +https://workers.dev)",
+  "User-Agent": "Mozilla/5.0 (compatible; VocabularyExplorer/2.3; +https://workers.dev)",
   "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
   "Accept": "text/html,application/xhtml+xml"
 };
@@ -55,12 +55,82 @@ async function fetchHtml(url){
   if(!r.ok) throw new Error(`HTTP ${r.status}`);
   return await r.text();
 }
-function pronunciation(page){
-  const ipa=(region)=>{const re=new RegExp(`class=["'][^"']*${region}[^"']*["'][\\s\\S]{0,3500}?class=["'][^"']*ipa[^"']*["'][^>]*>([\\s\\S]*?)<\\/span>`,`i`); const m=page.match(re); return m?textOnly(m[1]):"";};
-  const sources=[]; const re=/(?:src|data-src-mp3)=["']([^"']+\.(?:mp3|ogg)(?:\?[^"']*)?)["']/ig; let m;
-  while((m=re.exec(page))){let s=decodeEntities(m[1]).replace(/\\\//g,"/"); if(s.startsWith("//")) s="https:"+s; else if(s.startsWith("/")) s=CAMBRIDGE_BASE+s; sources.push(s);}
-  return {uk_ipa:ipa("uk"),us_ipa:ipa("us"),uk_audio:sources.find(x=>/uk_pron/i.test(x))||"",us_audio:sources.find(x=>/us_pron/i.test(x))||""};
+function normalizeCambridgeAudioUrl(src){
+  let value=decodeEntities(String(src||"")).trim().replace(/\\\//g,"/");
+  if(!value) return "";
+  // Cambridge sometimes embeds escaped query separators or protocol-relative paths.
+  value=value.replace(/\\u0026/gi,"&");
+  try{
+    const u=new URL(value,CAMBRIDGE_BASE);
+    if(!/^https?:$/.test(u.protocol)) return "";
+    return u.toString();
+  }catch(_){return "";}
 }
+function findAudioSources(source){
+  const found=[];
+  const add=(raw)=>{
+    const url=normalizeCambridgeAudioUrl(raw);
+    if(url && !found.includes(url)) found.push(url);
+  };
+  const patterns=[
+    /<source[^>]+src=["']([^"']+\.(?:mp3|ogg)[^"']*)["']/ig,
+    /<audio[^>]+src=["']([^"']+\.(?:mp3|ogg)[^"']*)["']/ig,
+    /data-src-mp3=["']([^"']+\.mp3[^"']*)["']/ig,
+    /data-src-ogg=["']([^"']+\.ogg[^"']*)["']/ig,
+    /audioUrl["']?\s*[:=]\s*["']([^"']+\.(?:mp3|ogg)[^"']*)["']/ig,
+    /["']([^"']*\/(?:uk_pron|us_pron)\/[^"']+\.(?:mp3|ogg)[^"']*)["']/ig,
+    /((?:https?:)?\/\/dictionary\.cambridge\.org\/media\/english\/(?:uk_pron|us_pron)\/[^\s"'<>]+\.(?:mp3|ogg)(?:\?[^\s"'<>]*)?)/ig,
+    /(\/media\/english\/(?:uk_pron|us_pron)\/[^\s"'<>]+\.(?:mp3|ogg)(?:\?[^\s"'<>]*)?)/ig,
+    /(\\\/media\\\/english\\\/(?:uk_pron|us_pron)\\\/[^\s"'<>]+?\.(?:mp3|ogg)(?:\\?[^\s"'<>]*)?)/ig
+  ];
+  for(const re of patterns){
+    let m;
+    while((m=re.exec(source))){add(m[1]);}
+  }
+  return found;
+}
+function firstRegexText(patterns, source){
+  for(const re of patterns){
+    const m=source.match(re);
+    if(m && m[1]){
+      const value=textOnly(m[1]);
+      if(value) return value;
+    }
+  }
+  return "";
+}
+function nearbyRegionAudio(page,region){
+  const regionRx=region==="uk"
+    ? /(?:\bUK\b|class=["'][^"']*\buk\b[^"']*["'])/ig
+    : /(?:\bUS\b|class=["'][^"']*\bus\b[^"']*["'])/ig;
+  let m;
+  while((m=regionRx.exec(page))){
+    const begin=Math.max(0,m.index-600);
+    const block=page.slice(begin,Math.min(page.length,m.index+6500));
+    const sources=findAudioSources(block);
+    const byPath=sources.find(x=>new RegExp(`/${region}_pron/`,`i`).test(x));
+    if(byPath) return byPath;
+    if(sources.length) return sources[0];
+  }
+  return "";
+}
+function pronunciation(page){
+  const uk_ipa=firstRegexText([
+    /class=["'][^"']*uk[^"']*["'][\s\S]{0,3500}?class=["'][^"']*ipa[^"']*["'][^>]*>([\s\S]*?)<\/span>/i,
+    /<span[^>]+class=["'][^"']*ipa[^"']*["'][^>]*>(\/[^<]+\/)<\/span>[\s\S]{0,1200}?<span[^>]+class=["'][^"']*region[^"']*["'][^>]*>\s*UK\s*<\/span>/i
+  ],page);
+  const us_ipa=firstRegexText([
+    /class=["'][^"']*us[^"']*["'][\s\S]{0,3500}?class=["'][^"']*ipa[^"']*["'][^>]*>([\s\S]*?)<\/span>/i,
+    /<span[^>]+class=["'][^"']*ipa[^"']*["'][^>]*>(\/[^<]+\/)<\/span>[\s\S]{0,1200}?<span[^>]+class=["'][^"']*region[^"']*["'][^>]*>\s*US\s*<\/span>/i
+  ],page);
+  const sources=findAudioSources(page);
+  let uk_audio=sources.find(x=>/\/uk_pron\//i.test(x)||/uk_pron/i.test(x))||"";
+  let us_audio=sources.find(x=>/\/us_pron\//i.test(x)||/us_pron/i.test(x))||"";
+  if(!uk_audio) uk_audio=nearbyRegionAudio(page,"uk");
+  if(!us_audio) us_audio=nearbyRegionAudio(page,"us");
+  return {uk_ipa,us_ipa,uk_audio,us_audio};
+}
+
 function parseCambridge(page,word){
   const q=normalizeWord(word); const pr=pronunciation(page);
   let entries=balancedBlocks(page,"div",["entry-body__el"],20);
@@ -115,8 +185,37 @@ function parseEtymology(page,word){
   for(const line of content){if(/^also from /i.test(line)) continue; if(/^[A-Za-z][A-Za-z0-9 '\-]*\([A-Za-z.]+\)$/.test(line)){cur={title:line,paragraphs:[]};sections.push(cur);continue;} if(!cur){cur={title:q,paragraphs:[]};sections.push(cur);} if(line.length>=18&&cur.paragraphs.length<4) cur.paragraphs.push(line); if(sections.length>=4&&sections[3].paragraphs.length>=4) break;}
   const cleaned=sections.filter(s=>s.paragraphs.length).slice(0,4); return {word:q,headword:q,source:"etymonline",source_url:makeEtymonlineUrl(q),sections:cleaned,error:cleaned.length?"":"Etymonline 有回應，但沒有解析到乾淨字源正文。",cache_schema_version:CACHE_SCHEMA_VERSION};
 }
+async function proxyCambridgeAudio(request){
+  const requestUrl=new URL(request.url);
+  const src=requestUrl.searchParams.get("src")||"";
+  let audioUrl;
+  try{audioUrl=new URL(src);}catch(_){return new Response("Invalid audio URL",{status:400});}
+  if(audioUrl.protocol!=="https:" || audioUrl.hostname!=="dictionary.cambridge.org" || !audioUrl.pathname.startsWith("/media/english/")){
+    return new Response("Audio source is not allowed",{status:403});
+  }
+  const upstream=await fetch(audioUrl.toString(),{
+    headers:{
+      "User-Agent":UPSTREAM_HEADERS["User-Agent"],
+      "Accept":"audio/mpeg,audio/ogg,audio/*;q=0.9,*/*;q=0.1",
+      "Referer":"https://dictionary.cambridge.org/"
+    },
+    redirect:"follow"
+  });
+  if(!upstream.ok) return new Response(`Audio upstream HTTP ${upstream.status}`,{status:502});
+  const headers=new Headers();
+  headers.set("content-type",upstream.headers.get("content-type")||"audio/mpeg");
+  headers.set("cache-control","public, max-age=86400");
+  headers.set("accept-ranges","bytes");
+  const len=upstream.headers.get("content-length"); if(len) headers.set("content-length",len);
+  return new Response(upstream.body,{status:200,headers});
+}
 async function handleApi(request){
-  const url=new URL(request.url); const word=normalizeWord(url.searchParams.get("word")||""); if(!word) return json({error:"請輸入英文單字。"},400);
+  const url=new URL(request.url);
+  if(url.pathname==="/api/audio"){
+    try{return await proxyCambridgeAudio(request);}catch(e){return new Response(`Audio proxy failed: ${e?.message||String(e)}`,{status:502});}
+  }
+  const word=normalizeWord(url.searchParams.get("word")||"");
+  if(!word) return json({error:"請輸入英文單字。"},400);
   try{
     if(url.pathname==="/api/lookup"){
       const [dict,th]=await Promise.all([fetchHtml(makeCambridgeUrl(word)),fetchHtml(makeThesaurusUrl(word)).catch(()=>"")]);
@@ -127,4 +226,5 @@ async function handleApi(request){
     return json({error:"Unknown API"},404);
   }catch(e){return json({word,error:`查詢來源失敗：${e?.message||String(e)}`},502);}
 }
+
 export default {async fetch(request,env){const url=new URL(request.url); if(url.pathname.startsWith("/api/")) return handleApi(request); return env.ASSETS.fetch(request);}};

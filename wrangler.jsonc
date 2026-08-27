@@ -1,5 +1,5 @@
 {
-  "name": "bridge-engsearch",
+  "name": "english-dictionary-multi-platform",
   "main": "src/worker.js",
   "compatibility_date": "2026-08-27",
   "assets": {

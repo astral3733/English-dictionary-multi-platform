@@ -91,7 +91,11 @@ function makeEtymonlineUrl(word){
 function playPronunciation(kind){
   const url = currentAudio[kind];
   if(url){
-    const audio = new Audio(url);
+    // Play through our same-origin Worker proxy. This avoids Safari/hotlink issues
+    // while keeping Cambridge as the actual pronunciation source.
+    const proxied = `/api/audio?src=${encodeURIComponent(url)}`;
+    const audio = new Audio(proxied);
+    audio.preload = "auto";
     audio.play().catch(() => speakBrowser(currentWord, kind === "uk" ? "en-GB" : "en-US"));
     return;
   }
