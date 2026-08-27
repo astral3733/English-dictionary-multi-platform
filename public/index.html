@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vocabulary Explorer</title>
+  <link rel="icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="layout">
+    <div id="topAnchor"></div>
+    <section class="hero">
+      <div>
+        <h1>Vocabulary Explorer</h1>
+      </div>
+      <div class="topActions"><a id="sourceLink" href="https://dictionary.cambridge.org/dictionary/english-chinese-traditional/" target="_blank" rel="noreferrer" title="查詢後會連到目前單字的 Cambridge 頁面">Cambridge</a><a id="longmanLink" href="https://www.ldoceonline.com/" target="_blank" rel="noreferrer" title="查詢後會連到目前單字的 Longman 英英頁面">Longman</a><a id="etymologyLink" href="https://www.etymonline.com/" target="_blank" rel="noreferrer" title="查詢後會連到目前單字的 Etymonline 頁面">Etymonline</a></div>
+    </section>
+
+    <section class="searchBox">
+      <input id="wordInput" autocomplete="off" spellcheck="false" placeholder="輸入英文單字，例如 happy">
+      <button id="searchBtn">查詢</button>
+      <button id="refreshBtn" class="secondary">重新抓取</button>
+    </section>
+    <div id="status" class="status trailBox"></div>
+
+    <section id="result" class="card hidden">
+      <div class="headrow">
+        <div class="wordBlock">
+          <div class="wordLine">
+            <h2 id="headword"></h2>
+          </div>
+          <div class="pronLine">
+            <div class="pronGroup usPron"><span id="usIpa"></span><button id="usAudio" class="small audioBtn">US 發音</button></div>
+            <div class="pronGroup ukPron"><span id="ukIpa"></span><button id="ukAudio" class="small audioBtn secondaryAudio">UK 發音</button></div>
+          </div>
+        </div>
+        <button id="favBtn">加入收藏</button>
+      </div>
+      <div class="sourceSwitch"><button id="cambridgeViewBtn" class="sourceTab activeSource">Cambridge 繁中</button><button id="longmanViewBtn" class="sourceTab">Longman 英英</button><button id="etymologyViewBtn" class="sourceTab">Etymonline 字源</button><span id="sourceModeLabel" class="sourceModeLabel">目前顯示 Cambridge 繁中</span></div>
+      <div id="entries"></div>
+      <h3>同義字</h3><div id="synonyms" class="chips"></div>
+      <h3>反義字</h3><div id="antonyms" class="chips"></div>
+      <h3>相關字</h3><div id="related" class="chips"></div>
+    </section>
+
+    <section class="grid">
+      <div class="card"><div class="cardTitle"><h3>查詢歷史</h3><button id="clearHistoryBtn" class="secondary small">清除歷史</button></div><div id="history" class="chips"></div></div>
+      <div class="card"><h3>收藏單字</h3><div id="favorites" class="chips"></div><button id="exportBtn" class="secondary wide">匯出收藏 JSON</button></div>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
