@@ -1,6 +1,9 @@
 const $ = id => document.getElementById(id);
 let currentWord = "";
 let currentAudio = { uk: "", us: "" };
+let sourceAudio = { cambridge:{uk:"",us:""}, longman:{uk:"",us:""} };
+let activeAudio = null;
+let pronunciationAttemptId = 0;
 let sessionTrail = [];
 let lastCambridgeData = null;
 let lastLongmanData = null;
@@ -63,7 +66,7 @@ function clearSessionTrail(){
 
 function speakBrowser(word, lang){
   if(!("speechSynthesis" in window)){
-    setStatus("此瀏覽器不支援內建發音；也沒有抓到 Cambridge 音訊。", true);
+    setStatus("此瀏覽器不支援內建發音，而且目前來源沒有可播放的真人音訊。", true);
     return;
   }
   window.speechSynthesis.cancel();
@@ -88,18 +91,77 @@ function makeEtymonlineUrl(word){
   return `https://www.etymonline.com/word/${encodeURIComponent(slug)}`;
 }
 
-function playPronunciation(kind){
-  const url = currentAudio[kind];
-  if(url){
-    // Play through our same-origin Worker proxy. This avoids Safari/hotlink issues
-    // while keeping Cambridge as the actual pronunciation source.
-    const proxied = `/api/audio?src=${encodeURIComponent(url)}`;
-    const audio = new Audio(proxied);
-    audio.preload = "auto";
-    audio.play().catch(() => speakBrowser(currentWord, kind === "uk" ? "en-GB" : "en-US"));
+function stopActiveAudio(){
+  if(!activeAudio) return;
+  try{activeAudio.pause(); activeAudio.removeAttribute("src"); activeAudio.load();}catch(_){ }
+  activeAudio=null;
+}
+
+function setPronunciationSource(source){
+  const audio=sourceAudio[source] || {uk:"",us:""};
+  currentAudio={uk:audio.uk||"",us:audio.us||""};
+  const sourceName=source==="longman"?"Longman":"Cambridge";
+  if($("ukAudio")) $("ukAudio").textContent=currentAudio.uk?"UK 發音":`UK 發音（瀏覽器）`;
+  if($("usAudio")) $("usAudio").textContent=currentAudio.us?"US 發音":`US 發音（瀏覽器）`;
+  if($("ukAudio")) $("ukAudio").title=currentAudio.uk?`${sourceName} UK 真人發音`:`${sourceName} 未提供 UK 音檔，使用瀏覽器發音`;
+  if($("usAudio")) $("usAudio").title=currentAudio.us?`${sourceName} US 真人發音`:`${sourceName} 未提供 US 音檔，使用瀏覽器發音`;
+}
+
+function playHtmlAudio(src, attemptId){
+  return new Promise((resolve,reject)=>{
+    if(attemptId!==pronunciationAttemptId) return reject(new Error("superseded"));
+    stopActiveAudio();
+    const audio=new Audio();
+    activeAudio=audio;
+    audio.preload="auto";
+    audio.playsInline=true;
+    let settled=false;
+    let timer=null;
+    const cleanupFailedAudio=()=>{
+      try{audio.pause(); audio.removeAttribute("src"); audio.load();}catch(_){ }
+      if(activeAudio===audio) activeAudio=null;
+    };
+    const fail=err=>{
+      if(settled) return; settled=true;
+      if(timer) clearTimeout(timer);
+      cleanupFailedAudio();
+      reject(err instanceof Error?err:new Error("audio playback failed"));
+    };
+    audio.addEventListener("error",()=>fail(new Error(`media error ${audio.error?.code||"unknown"}`)),{once:true});
+    audio.addEventListener("playing",()=>{
+      if(settled) return; settled=true;
+      if(timer) clearTimeout(timer);
+      resolve();
+    },{once:true});
+    timer=setTimeout(()=>fail(new Error("audio playback timeout")),10000);
+    audio.src=src;
+    try{audio.load();}catch(_){ }
+    const promise=audio.play();
+    if(promise && typeof promise.catch==="function") promise.catch(fail);
+  });
+}
+
+async function playPronunciation(kind){
+  const attemptId=++pronunciationAttemptId;
+  const url=currentAudio[kind];
+  const lang=kind==="uk"?"en-GB":"en-US";
+  if(!url){speakBrowser(currentWord,lang);return;}
+
+  // 1) Same-origin Worker proxy: primary path on iPhone/iPad/Android/desktop.
+  const proxied=`/api/audio?src=${encodeURIComponent(url)}`;
+  try{
+    await playHtmlAudio(proxied,attemptId);
     return;
-  }
-  speakBrowser(currentWord, kind === "uk" ? "en-GB" : "en-US");
+  }catch(_){ }
+
+  // 2) Direct dictionary media URL: fallback when a browser/network rejects the proxy path.
+  try{
+    await playHtmlAudio(url,attemptId);
+    return;
+  }catch(_){ }
+
+  // 3) Last resort only.
+  if(attemptId===pronunciationAttemptId) speakBrowser(currentWord,lang);
 }
 
 function chip(word){const s=document.createElement("button");s.className="chip";s.textContent=word;s.onclick=()=>lookup(word,false,true);return s;}
@@ -122,6 +184,7 @@ function setSourceMode(mode){
 function renderCambridgeView(){
   if(!lastCambridgeData) return;
   setSourceMode("cambridge");
+  setPronunciationSource("cambridge");
   renderEntries(lastCambridgeData.entries||[], "cambridge");
   renderChips("synonyms",lastCambridgeData.synonyms||[]);
   renderChips("antonyms",lastCambridgeData.antonyms||[]);
@@ -137,6 +200,8 @@ async function renderLongmanView(force=false){
     const res=await fetch(`/api/longman?word=${encodeURIComponent(currentWord)}&force=${force?"1":"0"}`);
     const data=await res.json();
     lastLongmanData=data;
+    sourceAudio.longman={uk:data.uk_audio||"",us:data.us_audio||""};
+    setPronunciationSource("longman");
     if(data.error) setStatus(data.error,true); else renderSessionTrail();
     renderEntries(data.entries||[], "longman");
     // Longman 本身不提供穩定的同義字／反義字／相關字解析。
@@ -203,7 +268,11 @@ async function renderEtymologyView(force=false){
 function renderResult(data){
   lastCambridgeData=data;
   currentWord=data.word||data.headword||"";
-  currentAudio={uk:data.uk_audio||"",us:data.us_audio||""};
+  sourceAudio={
+    cambridge:{uk:data.uk_audio||"",us:data.us_audio||""},
+    longman:{uk:"",us:""}
+  };
+  setPronunciationSource("cambridge");
   $("result").classList.remove("hidden");
   $("headword").textContent=data.word||data.headword||"";
   $("ukIpa").textContent=data.uk_ipa?`UK ${data.uk_ipa}`:"UK 音標未解析到";
@@ -211,8 +280,6 @@ function renderResult(data){
 
   $("ukAudio").classList.remove("hidden");
   $("usAudio").classList.remove("hidden");
-  $("ukAudio").textContent=data.uk_audio?"UK 發音":"UK 發音（瀏覽器）";
-  $("usAudio").textContent=data.us_audio?"US 發音":"US 發音（瀏覽器）";
   $("ukAudio").onclick=()=>playPronunciation("uk");
   $("usAudio").onclick=()=>playPronunciation("us");
 
