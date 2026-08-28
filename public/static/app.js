@@ -257,17 +257,26 @@ async function lookup(word,force=false,scrollTop=false){
     if(scrollTop) setTimeout(scrollToTopArea, 60);
   }catch(err){setStatus(`查詢失敗：${err}`,true);}
 }
-const STORAGE_HISTORY="vocabExplorer.history.v1";
+const STORAGE_HISTORY="vocabExplorer.history.session.v2";
+const LEGACY_STORAGE_HISTORY="vocabExplorer.history.v1";
 const STORAGE_FAVORITES="vocabExplorer.favorites.v1";
+
+function readSession(key){try{return JSON.parse(sessionStorage.getItem(key)||"[]")}catch(e){return []}}
+function writeSession(key,value){sessionStorage.setItem(key,JSON.stringify(value));}
 function readLocal(key){try{return JSON.parse(localStorage.getItem(key)||"[]")}catch(e){return []}}
 function writeLocal(key,value){localStorage.setItem(key,JSON.stringify(value));}
+
+// 2.4 migration: old Cloudflare builds stored query history permanently.
+// Remove only that legacy history; favorites remain persistent in localStorage.
+try{localStorage.removeItem(LEGACY_STORAGE_HISTORY);}catch(e){}
+
 function rememberHistory(word){
   const w=String(word||"").trim(); if(!w)return;
-  let list=readLocal(STORAGE_HISTORY).filter(x=>String(x).toLowerCase()!==w.toLowerCase());
-  list.unshift(w); writeLocal(STORAGE_HISTORY,list.slice(0,80));
+  let list=readSession(STORAGE_HISTORY).filter(x=>String(x).toLowerCase()!==w.toLowerCase());
+  list.unshift(w); writeSession(STORAGE_HISTORY,list.slice(0,80));
 }
 async function loadLists(){
-  const h=readLocal(STORAGE_HISTORY), f=readLocal(STORAGE_FAVORITES);
+  const h=readSession(STORAGE_HISTORY), f=readLocal(STORAGE_FAVORITES);
   $("history").innerHTML=""; h.forEach(w=>$("history").appendChild(chip(w)));
   if(!h.length) $("history").innerHTML='<span class="empty">目前沒有資料</span>';
   $("favorites").innerHTML=""; f.forEach(w=>$("favorites").appendChild(chip(w)));
@@ -278,7 +287,7 @@ async function addFavorite(){
   if(!f.some(w=>String(w).toLowerCase()===currentWord.toLowerCase())) f.unshift(currentWord);
   writeLocal(STORAGE_FAVORITES,f); loadLists();
 }
-async function clearHistory(){writeLocal(STORAGE_HISTORY,[]);loadLists();}
+async function clearHistory(){writeSession(STORAGE_HISTORY,[]);loadLists();}
 async function exportFavorites(){
   const data=readLocal(STORAGE_FAVORITES).map(word=>({word}));
   const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
