@@ -31,7 +31,8 @@ body{margin:0;background:var(--warm-white);color:var(--ink)}
 .hero a#longmanLink{background:#fff5e8;color:#7a3f13;border-color:#ead2ad}
 .hero a#longmanLink:hover{background:#f6e7cf}
 .searchBox{display:flex;align-items:center;gap:10px;background:var(--card);padding:14px;border-radius:17px;box-shadow:0 1px 12px var(--shadow);border:1px solid #eadfd4}
-.searchBox input{flex:1;font-size:18px;line-height:1.4;padding:11px 13px;border:1px solid #c7d2de;border-radius:11px;min-height:46px;color:var(--ink);background:#fff}
+.searchBox input{flex:1;font-size:18px;line-height:1.4;padding:11px 13px;border:1px solid #c7d2de;border-radius:11px;height:50px;min-height:50px;color:var(--ink);background:#fff}
+.searchBox>button{height:50px;min-height:50px}
 .searchBox input:focus{outline:3px solid #d6e8f8;border-color:#8fb3d6}
 button{border:1px solid transparent;border-radius:10px;padding:10px 15px;min-height:40px;background:var(--navy);color:white;cursor:pointer;font-weight:850;font-size:14px;line-height:1.2;white-space:nowrap;vertical-align:middle}
 button:hover{background:var(--navy-2)}

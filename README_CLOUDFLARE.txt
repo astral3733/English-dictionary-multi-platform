@@ -1,4 +1,4 @@
-Vocabulary Explorer 2.6 — Cloudflare Worker 版
+Vocabulary Explorer 2.7 — Cloudflare Worker 版
 
 重點：
 - 不使用 Python / Flask / localhost / 127.0.0.1。
@@ -47,3 +47,13 @@ Worker 名稱已對齊目前正式網址：english-dictionary-multi-platform.ast
 - 切換 Cambridge/Longman 分頁時，上方 UK/US 發音按鈕會同步切換到該字典來源。
 - 若目前來源沒有真人音檔，才使用瀏覽器 TTS。
 - Etymonline 為字源來源，不改變目前字典發音來源。
+
+
+2.7 iOS / PWA 圖示與搜尋列尺寸：
+- 沿用既有 icon.ico，不重新設計圖示。
+- 新增 apple-touch-icon.png（180×180），供 iPhone / iPad「加入主畫面」使用。
+- 新增 PWA 192×192、512×512 圖示與 manifest.webmanifest。
+- 新增 16×16、32×32 favicon PNG，並保留原 favicon.ico。
+- 加入 iOS standalone / web app 相關 meta 設定；Android/Chrome 亦可讀取同一份 manifest。
+- 「查詢」與「重新抓取」按鈕高度調整為 50px，與左側輸入列完全一致。
+- 維持 Cloudflare Workers + Static Assets 架構，不加入 D1、KV 或其他付費功能。
